@@ -29,4 +29,4 @@ CURRENT PIPELINE:
 1. Experiment with how robots explore their environment, i.e. let them update belief for cells in a visual cone in front of the robot, rather than just on their current cell
 1b. More realistic robot movement overall (rather than random DFS). 
 2. Analyze relevance of observation error and image augmentation methods (compared to real life scenario).
-2. Clean Code :)
+3. Add legends / overall cleanup to visualization code.
