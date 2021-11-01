@@ -23,3 +23,8 @@ CURRENT PIPELINE:
 6. Augment (rotate+translate, include scale later) the post-search maps of each robot, and keep track of inverse augmentation
 7. Attempt to merge augmented maps
 8. Apply inverse augmentation on maps to check final accuracy (intersection over union) of the merge
+
+
+### TODO:
+1. Experiment with how robots explore their environment, i.e. let them update belief for cells in a visual cone in front of the robot, rather than just on their current cell.
+2. Clean Code :)
