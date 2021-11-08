@@ -71,9 +71,9 @@ def augment_map(map, shift_limit=0.1, rotate_limit=45, fill=UNKNOWN):
     M_rotation = cv2.getRotationMatrix2D(center=center, angle=angle, scale=1.0)
     print(M_rotation)
     rotated_map = apply_warp(map, M_rotation, fill=fill)
-    shift_prop_x = np.random.uniform(low=-shift_limit, high=shift_limit)
+    shift_prop_x = 0 # np.random.uniform(low=-shift_limit, high=shift_limit)
     translation_x = shift_prop_x * x
-    shift_prop_y = np.random.uniform(low=-shift_limit, high=shift_limit)
+    shift_prop_y = 0 # np.random.uniform(low=-shift_limit, high=shift_limit)
     translation_y = shift_prop_y * y
     M_translation = np.float32([
         [1, 0, translation_x],
@@ -90,7 +90,7 @@ from skimage.transform import hough_line, hough_line_peaks
 
 def hough_spectrum_calculation(image):
     h, theta, d = hough_map_transform(image)
-    spectrum = np.sum(np.square(h), axis=0)
+    spectrum = np.sum(np.square(h), axis=1)
     max = np.max(spectrum)
     spectrum = spectrum / max
     return spectrum
@@ -245,7 +245,9 @@ if __name__ == "__main__":
     plt.show()
 
     map3, shift_params = compute_hypothesis(map1, map2, 4)
-    print(shift_params)
+    plt.imshow(map3, cmap="gray")
+    plt.show()
+    # print(shift_params)
     # sift_M = sift_mapmerge(map1, map2)
     # map2_warped = apply_warp(map2, sift_M)
-    print(accept(map1, map3))
+    print("Acceptance index for hough:", accept(map1, map3))
