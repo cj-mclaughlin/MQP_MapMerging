@@ -55,30 +55,31 @@ def show_samples():
 
 def apply_warp(map, M, fill=UNKNOWN):
     map_warp = np.copy(map)
-    w, h = map.shape[1], map.shape[0]
-    map_warp = cv2.warpAffine(src=map_warp, M=M, dsize=(w, h), flags=cv2.INTER_NEAREST, borderMode=cv2.BORDER_CONSTANT, borderValue=fill)
+    x, y = map.shape[0], map.shape[1]
+    map_warp = cv2.warpAffine(src=map_warp, M=M, dsize=(y, x), flags=cv2.INTER_NEAREST, borderMode=cv2.BORDER_CONSTANT, borderValue=fill)
     return map_warp
 
-def augment_map(map, shift_limit=0.2, rotate_limit=45, fill=UNKNOWN):
+def augment_map(map, shift_limit=0.1, rotate_limit=45, fill=UNKNOWN):
     """
     apply set of random image augmentation to map image
     return augmented map, as well as parameters for augmentation
     """
-    w, h = map.shape[1], map.shape[0]
-    center = w/2, h/2
-    angle = np.random.uniform(low=-rotate_limit, high=rotate_limit)
+    x, y = map.shape[0], map.shape[1]
+    center = y/2, x/2
+    # angle = np.random.uniform(low=-rotate_limit, high=rotate_limit)
+    angle = 45  # hard code for consistency
     M_rotation = cv2.getRotationMatrix2D(center=center, angle=angle, scale=1.0)
     print(M_rotation)
     rotated_map = apply_warp(map, M_rotation, fill=fill)
     shift_prop_x = np.random.uniform(low=-shift_limit, high=shift_limit)
-    translation_x = shift_prop_x * w
+    translation_x = shift_prop_x * x
     shift_prop_y = np.random.uniform(low=-shift_limit, high=shift_limit)
-    translation_y = shift_prop_x * h
+    translation_y = shift_prop_y * y
     M_translation = np.float32([
         [1, 0, translation_x],
         [0, 1, translation_y]
     ])
-    augmented_map = apply_warp(map, M_translation, fill=fill)
+    augmented_map = apply_warp(rotated_map, M_translation, fill=fill)
     augment_dict = {"translation_x":translation_x, "translation_y":translation_y, "angle":angle}
     return augmented_map, augment_dict
 
@@ -119,13 +120,13 @@ def axis_spectrum(axis, map):
 def compute_hypothesis(map1, map2, num):
     """
     produces best possible accuracy merges given two maps
-    TODO validate with new setup
     """
-    w, h = map1.shape[1], map1.shape[0]
-    center = w/2, h/2
+    x, y = map1.shape[0], map1.shape[1]
+    center = y/2, x/2
     best_map = None
     best_acpt = -1
-    
+    best_params = None
+
     HS_M1 = hough_spectrum_calculation(map1)
     HS_M2 = hough_spectrum_calculation(map2)
     CC_M1_M2 = FFT_circular_cross_correlation(HS_M1, HS_M2)
@@ -134,6 +135,7 @@ def compute_hypothesis(map1, map2, num):
     SX_M1 = axis_spectrum(0, map1)
     SY_M1 = axis_spectrum(1, map1)
     map3 = None
+
     for rot in local_max:
         M_rotation = cv2.getRotationMatrix2D(center=center, angle=rot, scale=1.0)
         map3 = apply_warp(map1, M_rotation, fill=UNKNOWN)
@@ -144,19 +146,24 @@ def compute_hypothesis(map1, map2, num):
         CC_M1_M3_X = cross_correlation(SX_M1, SX_M3)
         CC_M1_M3_Y = cross_correlation(SY_M1, SY_M3)
         
-        max_x = extract_local_maximums(CC_M1_M3_X, 1)[0]
-        max_y = extract_local_maximums(CC_M1_M3_Y, 1)[0]
+        best_dx = extract_local_maximums(CC_M1_M3_X, 1)[0]
+        best_dy = extract_local_maximums(CC_M1_M3_Y, 1)[0]
         
-        cand_map = map3.rigid_transform(max_x, max_y, 0)
-        acpt = accept(map1.get_map(), cand_map)
+        M_translation = np.float32([
+            [1, 0, best_dx],
+            [0, 1, best_dy]
+        ])
+        cand_map = apply_warp(map3, M_translation, fill=UNKNOWN)
+        acpt = accept(map1, cand_map)
         
-        print(max_x, max_y, rot, acpt)
+        print(best_dx, best_dy, rot, acpt)
         
         if acpt > best_acpt:
             best_acpt = acpt
             best_map = cand_map
+            best_params = (best_dx, best_dy, rot)
             
-    return best_map
+    return best_map, best_params
 
 """### SIFT Based"""
 
@@ -232,6 +239,13 @@ if __name__ == "__main__":
     train_gen = CustomDataGen(filenames=TRAIN_FILENAMES, batch_size=1)
     map1, map2, params = train_gen[0]
 
-    sift_M = sift_mapmerge(map1, map2)
-    map2_warped = apply_warp(map2, sift_M)
-    print(accept(map1, map2))
+    plt.imshow(map1, cmap="gray")
+    plt.show()
+    plt.imshow(map2, cmap="gray")
+    plt.show()
+
+    map3, shift_params = compute_hypothesis(map1, map2, 4)
+    print(shift_params)
+    # sift_M = sift_mapmerge(map1, map2)
+    # map2_warped = apply_warp(map2, sift_M)
+    print(accept(map1, map3))
