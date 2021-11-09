@@ -152,7 +152,7 @@ def compute_hypothesis(map1, map2, num):
     map3 = None
 
     for rot in local_max:
-        M_rotation = cv2.getRotationMatrix2D(center=center, angle=rot, scale=1.0)
+        M_rotation = cv2.getRotationMatrix2D(center=center, angle=-rot, scale=1.0)
         map3 = apply_warp(map2, M_rotation, fill=UNKNOWN)  # dont cheat lol
 
         plt.imshow(map3, cmap="gray")
