@@ -59,21 +59,20 @@ def apply_warp(map, M, fill=UNKNOWN):
     map_warp = cv2.warpAffine(src=map_warp, M=M, dsize=(y, x), flags=cv2.INTER_NEAREST, borderMode=cv2.BORDER_CONSTANT, borderValue=fill)
     return map_warp
 
-def augment_map(map, shift_limit=0.1, rotate_limit=45, fill=UNKNOWN):
+def augment_map(map, shift_limit=0.2, rotate_limit=45, fill=UNKNOWN):
     """
     apply set of random image augmentation to map image
     return augmented map, as well as parameters for augmentation
     """
     x, y = map.shape[0], map.shape[1]
     center = y/2, x/2
-    # angle = np.random.uniform(low=-rotate_limit, high=rotate_limit)
+    angle = np.random.uniform(low=-rotate_limit, high=rotate_limit)
     angle = 45  # hard code for consistency
     M_rotation = cv2.getRotationMatrix2D(center=center, angle=angle, scale=1.0)
-    print(M_rotation)
     rotated_map = apply_warp(map, M_rotation, fill=fill)
-    shift_prop_x = 0 # np.random.uniform(low=-shift_limit, high=shift_limit)
+    shift_prop_x = np.random.uniform(low=-shift_limit, high=shift_limit)
     translation_x = shift_prop_x * x
-    shift_prop_y = 0 # np.random.uniform(low=-shift_limit, high=shift_limit)
+    shift_prop_y = np.random.uniform(low=-shift_limit, high=shift_limit)
     translation_y = shift_prop_y * y
     M_translation = np.float32([
         [1, 0, translation_x],
@@ -90,14 +89,33 @@ from skimage.transform import hough_line, hough_line_peaks
 
 def hough_spectrum_calculation(image):
     h, theta, d = hough_map_transform(image)
-    spectrum = np.sum(np.square(h), axis=1)
+    spectrum = np.sum(np.square(h), axis=0)
     max = np.max(spectrum)
     spectrum = spectrum / max
     return spectrum
 
-def hough_map_transform(image):
+def render_hough_spectrum(spectrum, image):
+    # rendering the image is optional
+    fig, axes = plt.subplots(1, 2, figsize=(15, 6))
+    ax = axes.ravel()
+    ax[0].imshow(image, cmap="gray")
+    ax[0].set_title('Input image')
+    ax[0].set_axis_off()
+    
+    ax[1].set_title('Hough Spectrum')
+    ax[1].set_xlabel('angle (theta)')
+    ax[1].set_ylabel('hough spectrum')
+    ax[1].plot(spectrum)
+    plt.show()
+
+def hough_map_transform(map):
     tested_angles = np.linspace(0, 2*np.pi, 360, endpoint=False)
-    h, theta, d = hough_line(image, theta=tested_angles)
+    # change map to format s.t. 1 where occupied, 0 otherwise
+    edge_map = np.copy(map)
+    edge_map[edge_map == OCCUPIED] = 1  # temp
+    edge_map[edge_map == UNKNOWN] = 0
+    edge_map[edge_map == FREE] = 0
+    h, theta, d = hough_line(edge_map, theta=tested_angles)
     return h, theta, d
 
 def FFT_circular_cross_correlation(HTM1, HTM2):
@@ -113,7 +131,6 @@ def extract_local_maximums(signal, num):
     return np.argpartition(signal, -num)[-num:]
 
 def axis_spectrum(axis, map):
-
     spect = np.sum(map, axis=axis)
     return spect / np.linalg.norm(spect)
 
@@ -129,6 +146,11 @@ def compute_hypothesis(map1, map2, num):
 
     HS_M1 = hough_spectrum_calculation(map1)
     HS_M2 = hough_spectrum_calculation(map2)
+
+    # TODO debug
+    render_hough_spectrum(HS_M1, map1)
+    render_hough_spectrum(HS_M2, map2)
+
     CC_M1_M2 = FFT_circular_cross_correlation(HS_M1, HS_M2)
     local_max = extract_local_maximums(CC_M1_M2, num)
     
@@ -138,7 +160,7 @@ def compute_hypothesis(map1, map2, num):
 
     for rot in local_max:
         M_rotation = cv2.getRotationMatrix2D(center=center, angle=rot, scale=1.0)
-        map3 = apply_warp(map1, M_rotation, fill=UNKNOWN)
+        map3 = apply_warp(map2, M_rotation, fill=UNKNOWN)  # dont cheat lol
 
         SX_M3 = axis_spectrum(0, map3)
         SY_M3 = axis_spectrum(1, map3)
@@ -213,7 +235,7 @@ def sift_mapmerge(map1, map2):
     src_pts = np.float32([ kp1[m.queryIdx].pt for m in good_matches ]).reshape(-1,1,2)
     dst_pts = np.float32([ kp2[m.trainIdx].pt for m in good_matches ]).reshape(-1,1,2)
 
-    M, mask = cv2.findHomography(src_pts, dst_pts, cv2.RANSAC,5.0)
+    M, mask = cv2.findHomography(dst_pts, src_pts, cv2.RANSAC, 5.0)
 
     return M[:2]  # should return 2x3 homography matrix, (last row is 0 0 1 regardless)
 
@@ -240,14 +262,26 @@ if __name__ == "__main__":
     map1, map2, params = train_gen[0]
 
     plt.imshow(map1, cmap="gray")
+    plt.title("Original")
     plt.show()
     plt.imshow(map2, cmap="gray")
+    plt.title("Rotated")
     plt.show()
 
-    map3, shift_params = compute_hypothesis(map1, map2, 4)
-    plt.imshow(map3, cmap="gray")
+    map_hough, shift_params = compute_hypothesis(map1, map2, 4)
+    plt.imshow(map_hough, cmap="gray")
+    plt.title("Recovered - Hough")
     plt.show()
+    print("Acceptance index for hough:", accept(map1, map_hough))
+
     # print(shift_params)
-    # sift_M = sift_mapmerge(map1, map2)
-    # map2_warped = apply_warp(map2, sift_M)
-    print("Acceptance index for hough:", accept(map1, map3))
+    sift_M = sift_mapmerge(map1, map2)
+    map_sift = apply_warp(map2, sift_M)
+    plt.imshow(map_sift, cmap="gray")
+    plt.title("Recovered - SIFT")
+    plt.show()
+    print("Acceptance index for SIFT:", accept(map1, map_sift))
+
+    print("GT shift parameters:", params)
+    print("Parameters found for hough:", shift_params)
+    print("Parameters found for SIFT:", sift_M)
