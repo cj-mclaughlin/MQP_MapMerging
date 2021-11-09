@@ -3,6 +3,7 @@ import matplotlib.pyplot as plt
 import cv2
 import scipy
 from time import time
+from tqdm import tqdm
 
 BASE_PATH = "Data/Mercer/"
 
@@ -136,9 +137,10 @@ def axis_spectrum(axis, map):
     return spect / np.max(spect)
     # return spect / np.linalg.norm(spect)
 
-def hough_mapmerge(map1, map2, num=4):
+def hough_mapmerge(map1, map2, num=4, robust=False, eps=3):
     """
     produces best possible accuracy merges given two maps
+    quick experiments show that eps between 2 and 5 is good
     """
     x, y = map1.shape[0], map1.shape[1]
     center = y/2, x/2
@@ -151,6 +153,14 @@ def hough_mapmerge(map1, map2, num=4):
 
     CC_M1_M2 = FFT_circular_cross_correlation(HS_M1, HS_M2)
     local_max = extract_local_maximums(CC_M1_M2, num)
+    # add r+/-eps into candidates for robust version
+    robust_max = []
+    if robust:
+        for r in local_max:
+            robust_max.append(r)
+            robust_max.append(r+eps)
+            robust_max.append(r-eps)
+        local_max = robust_max
     
     SX_M1 = axis_spectrum(0, map1)
     SY_M1 = axis_spectrum(1, map1)
@@ -213,7 +223,7 @@ def sift_mapmerge(map1, map2):
 
 def orb_mapmerge(map1, map2):
     map1, map2 = blur_map(map1), blur_map(map2)
-    orb = cv2.ORB_create(nfeatures=250)
+    orb = cv2.ORB_create(nfeatures=1000)
     kp1, desc1 = orb.detectAndCompute(map1, None)
     kp2, desc2 = orb.detectAndCompute(map2, None)
     index_params = dict(algorithm = 6, trees = 6, key_size=12, multi_probe_level = 1)
@@ -267,10 +277,9 @@ if __name__ == "__main__":
     ORB_TIMES = [[], [], [], []]
     HOUGH_RESULTS = [[], [], [], []]
     HOUGH_TIMES = [[], [], [], []]
-    for m_idx in range(len(maps)):
-        for i in range(N_ITERS):
+    for i in tqdm(range(N_ITERS)):
+        for m_idx in range(len(maps)):
             map1, map2 = get_training_sample(maps[m_idx])
-            plt.imsave(f"Data/Images/map{m_idx}.png", map1, cmap="gray")
             # sift
             sift_start = time()
             sift_map = sift_mapmerge(map1, map2)
@@ -280,7 +289,7 @@ if __name__ == "__main__":
             SIFT_TIMES[m_idx].append(sift_elapsed)
             # hough 
             hough_start = time()
-            hough_map = hough_mapmerge(map1, map2)
+            hough_map = hough_mapmerge(map1, map2, robust=True)
             hough_end = time()
             hough_elapsed = hough_start - hough_end
             HOUGH_RESULTS[m_idx].append(accept(map1, hough_map))
